@@ -66,6 +66,12 @@ var (
 )
 
 func main() {
+	// Check for valid existing token
+	if hasValidToken() {
+		fmt.Println("Valid token already exists. Exiting.")
+		os.Exit(0)
+	}
+
 	// Load configuration
 	var err error
 	config, err = loadConfig()
@@ -134,6 +140,46 @@ func main() {
 	case <-time.After(5 * time.Minute):
 		log.Fatal("Timed out waiting for authentication")
 	}
+}
+
+// Check for valid existing token
+func hasValidToken() bool {
+	homeDir, err := os.UserHomeDir()
+	if err != nil {
+		// Ignore errors, proceed with token refresh
+		return false
+	}
+
+	filePath := filepath.Join(homeDir, ".s3-token")
+	data, err := os.ReadFile(filePath)
+	if err != nil {
+		// File doesn't exist or can't be read - proceed
+		return false
+	}
+
+	var creds Credentials
+	if err := json.Unmarshal(data, &creds); err != nil {
+		// Invalid JSON - proceed
+		return false
+	}
+
+	if creds.Expiration == "" {
+		// Missing expiration - proceed
+		return false
+	}
+
+	expiration, err := time.Parse(time.RFC3339, creds.Expiration)
+	if err != nil {
+		// Invalid time format - proceed
+		return false
+	}
+
+	// Check if token is still valid (with 1-minute buffer)
+	if time.Now().UTC().Add(time.Minute).Before(expiration) {
+		return true
+	}
+
+	return false
 }
 
 // Generate PKCE code verifier (RFC 7636)
